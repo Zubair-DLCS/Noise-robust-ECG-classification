@@ -30,15 +30,26 @@ def _beat(cls: int, rng) -> np.ndarray:
     return b + rng.normal(0, .01, b.shape)
 
 
+# (pre, post) RR in seconds per class: S and V come early; V has a compensatory pause.
+_RR = {0: (0.80, 0.80), 1: (0.58, 0.90), 2: (0.56, 1.04), 3: (0.74, 0.86)}
+
+
+def _rr(cls: int, rng) -> np.ndarray:
+    local = rng.normal(0.8, 0.08)
+    pre, post = (v * local / 0.8 * rng.normal(1, 0.06) for v in _RR[cls])
+    return np.array([pre, post, local, pre / local, post / local, pre / post], np.float32)
+
+
 def make_beats(n_per_class=(3000, 400, 600, 150), n_records=20, seed=0) -> BeatSet:
     rng = np.random.default_rng(seed)
-    xs, ys = [], []
+    xs, ys, rrs = [], [], []
     for c, n in enumerate(n_per_class):
         xs += [_beat(c, rng) for _ in range(n)]
+        rrs += [_rr(c, rng) for _ in range(n)]
         ys += [c] * n
     x, y = np.stack(xs).astype(np.float32), np.array(ys)
     rec = rng.integers(0, n_records, size=len(y))
-    return BeatSet(x, y, rec)
+    return BeatSet(x, y, rec, np.stack(rrs))
 
 
 def make_noise(seed=0, seconds=600) -> dict[str, np.ndarray]:

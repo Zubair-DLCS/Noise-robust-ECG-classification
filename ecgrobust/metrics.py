@@ -60,8 +60,10 @@ def summarise(logits, y, T: float = 1.0) -> dict:
     p = softmax(logits, T)
     pred = p.argmax(1)
     grid, f1s, aurc = risk_coverage(p, y)
+    per_class = f1_score(y, pred, average=None, labels=[0, 1, 2, 3], zero_division=0)
     return {
         "accuracy": float((pred == y).mean()),
+        **{f"f1_{c}": float(v) for c, v in zip("NSVF", per_class)},
         "macro_f1": macro_f1(y, pred),
         "ece": ece(p, y),
         "mean_confidence": float(p.max(1).mean()),

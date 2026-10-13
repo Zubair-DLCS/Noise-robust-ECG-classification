@@ -40,6 +40,31 @@ class BeatSet:
     x: np.ndarray        # (n, PRE+POST) raw millivolt beats, float32
     y: np.ndarray        # (n,) class index
     rec: np.ndarray      # (n,) record id
+    rr: np.ndarray       # (n, N_RR) RR-interval timing features, float32
+
+
+# All MIT-BIH beat symbols (incl. paced/unknown) -- used to locate every R peak for RR intervals.
+BEAT_SYMBOLS = set("NLRejAaJSVEF/fQ")
+RR_NAMES = ["pre_RR", "post_RR", "local_RR", "pre/local", "post/local", "pre/post"]
+N_RR = len(RR_NAMES)
+LOCAL_BEATS = 10   # beats averaged for the local rhythm
+
+
+def rr_features(r_peaks: np.ndarray) -> np.ndarray:
+    """Timing features for each R peak (seconds and ratios), as in de Chazal et al. (2004).
+
+    pre_RR   time since previous beat        post_RR  time to next beat
+    local_RR mean of the previous 10 RRs     ratios   normalise for the patient's own heart rate
+    """
+    rr = np.diff(r_peaks) / FS
+    pre = np.r_[rr[0], rr]                 # first beat borrows its neighbour
+    post = np.r_[rr, rr[-1]]
+    csum = np.r_[0, np.cumsum(pre)]
+    idx = np.arange(len(pre))
+    lo = np.maximum(0, idx - LOCAL_BEATS + 1)
+    local = (csum[idx + 1] - csum[lo]) / (idx + 1 - lo)
+    f = np.stack([pre, post, local, pre / local, post / local, pre / post], 1)
+    return f.astype(np.float32)
 
 
 def download(root: str) -> None:
@@ -59,17 +84,20 @@ def download(root: str) -> None:
 
 def load_beats(root: str, records: list[int]) -> BeatSet:
     import wfdb
-    xs, ys, rs = [], [], []
+    xs, ys, rs, rrs = [], [], [], []
     for r in records:
         base = os.path.join(root, "mitdb", str(r))
         sig = wfdb.rdrecord(base, channels=[0]).p_signal[:, 0].astype(np.float32)
         ann = wfdb.rdann(base, "atr")
-        for pos, sym in zip(ann.sample, ann.symbol):
+        beats = [(p, s) for p, s in zip(ann.sample, ann.symbol) if s in BEAT_SYMBOLS]
+        feats = rr_features(np.array([p for p, _ in beats]))
+        for (pos, sym), f in zip(beats, feats):
             if sym in AAMI and PRE <= pos < len(sig) - POST:
                 xs.append(sig[pos - PRE: pos + POST])
                 ys.append(AAMI[sym])
                 rs.append(r)
-    return BeatSet(np.stack(xs), np.array(ys), np.array(rs))
+                rrs.append(f)
+    return BeatSet(np.stack(xs), np.array(ys), np.array(rs), np.stack(rrs))
 
 
 def load_noise(root: str) -> dict[str, np.ndarray]:

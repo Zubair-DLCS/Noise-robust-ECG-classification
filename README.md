@@ -25,13 +25,14 @@ A model that knows when it should not be trusted is safer than one that is only 
 | Classes | AAMI EC57: N, S, V, F | Clinical standard grouping |
 | Split | Inter-patient DS1 → DS2 (de Chazal et al., 2004) | Train and test patients never overlap, avoiding the leakage that inflates many published results |
 | Noise split | First half of each noise record for training, second half for testing | Test-time noise is never seen in training |
-| Model | 4-block 1D CNN (~60k parameters), weighted cross-entropy | Small enough to train on a laptop CPU |
+| Model | 4-block 1D CNN on the beat waveform (~60k parameters), fused with a small MLP on six RR-interval timing features; weighted cross-entropy | Small enough for a laptop CPU; RR timing is the standard cue for premature (S, V) beats |
+| RR features | pre-RR, post-RR, local mean of 10 RRs, and the three ratios between them | Normalise for each patient's own heart rate (de Chazal et al., 2004) |
 | SNR levels | clean, 24, 18, 12, 6, 0, −6 dB | Covers mild to severe interference |
 | Calibration | Expected Calibration Error (15 bins); temperature scaling fitted on held-out DS1 records | Standard post-hoc fix (Guo et al., 2017) |
 | Selective prediction | Max-softmax abstention; macro-F1 vs coverage; AURC | Risk–coverage evaluation (Geifman & El-Yaniv, 2017) |
 | Mitigation | Second model trained with NSTDB noise augmentation at random SNR in [−6, 24] dB | Tests whether training-time exposure fixes both accuracy and calibration |
 
-Noise is added to the raw beat at a target SNR, then each beat is z-normalised, so the model sees what a real device would.
+Noise is added to the raw beat at a target SNR, then each beat is z-normalised, so the model sees what a real device would. RR features come from the reference R-peak annotations, so noise affects the waveform but not the timing; robustness of R-peak detection itself is out of scope.
 
 ```
 SNR_dB = 10 · log10( P_signal / P_noise )
@@ -40,7 +41,9 @@ noise_scale = sqrt( P_signal / (P_noise · 10^(SNR_dB/10)) )
 
 ## Results
 
-Full MIT-BIH run, inter-patient (train DS1, test DS2 = 22 unseen patients), seed 0. Raw numbers for every condition are in [`results/metrics.json`](results/metrics.json).
+> **Version 2 (waveform + RR timing) is being re-run.** The table, figures and findings below are from **version 1 (waveform only)**, kept in [`results_v1_morphology_only/`](results_v1_morphology_only/) as an ablation. Reproduce it with `python run.py --no-rr`.
+
+Version 1, full MIT-BIH run, inter-patient (train DS1, test DS2 = 22 unseen patients), seed 0.
 
 | Test condition | Model | Accuracy | Macro-F1 | ECE | Mean confidence |
 |---|---|---|---|---|---|
@@ -53,15 +56,15 @@ Full MIT-BIH run, inter-patient (train DS1, test DS2 = 22 unseen patients), seed
 
 **Figure 1 — Macro-F1 and calibration error versus SNR, per noise type.**
 
-![Robustness](results/fig1_robustness.png)
+![Robustness](results_v1_morphology_only/fig1_robustness.png)
 
 **Figure 2 — Reliability diagrams for the clean-trained model.** Under muscle artefact at 0 dB the curve sits close to the diagonal, so the model *looks* well calibrated, yet macro-F1 has fallen to 0.27: it is confidently right on Normal beats and misses rare ones. Temperature scaling (fitted on other patients) pulls both curves further from the diagonal.
 
-![Reliability](results/fig2_reliability.png)
+![Reliability](results_v1_morphology_only/fig2_reliability.png)
 
 **Figure 3 — Selective prediction: performance when the model may abstain on uncertain beats.**
 
-![Selective prediction](results/fig3_selective.png)
+![Selective prediction](results_v1_morphology_only/fig3_selective.png)
 
 ### Key findings
 
@@ -85,7 +88,8 @@ cd Noise-robust-ECG-classification
 pip install -r requirements.txt
 
 python run.py --synthetic   # ~20 s smoke test, no download
-python run.py               # full study; downloads ~110 MB from PhysioNet on first run
+python run.py               # full study (waveform + RR); downloads ~100 MB from PhysioNet on first run
+python run.py --no-rr       # version 1 ablation: waveform only
 ```
 
 Outputs go to `results/`: `metrics.json` (every model × noise × SNR × calibration row) and three figures.
@@ -94,8 +98,8 @@ Outputs go to `results/`: `metrics.json` (every model × noise × SNR × calibra
 
 ```
 ecgrobust/
-  data.py        MIT-BIH / NSTDB loading, AAMI mapping, inter-patient split, SNR-controlled noise injection
-  model.py       1D CNN, training loop, temperature scaling
+  data.py        MIT-BIH / NSTDB loading, AAMI mapping, inter-patient split, RR features, SNR-controlled noise injection
+  model.py       1D CNN + RR-feature MLP, training loop, temperature scaling
   metrics.py     macro-F1, ECE, reliability bins, risk–coverage / AURC
   synthetic.py   synthetic beats and noise for the smoke test only
 run.py           end-to-end experiment
