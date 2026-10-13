@@ -41,40 +41,47 @@ noise_scale = sqrt( P_signal / (P_noise · 10^(SNR_dB/10)) )
 
 ## Results
 
-> **Version 2 (waveform + RR timing) is being re-run.** The table, figures and findings below are from **version 1 (waveform only)**, kept in [`results_v1_morphology_only/`](results_v1_morphology_only/) as an ablation. Reproduce it with `python run.py --no-rr`.
+Full MIT-BIH run, inter-patient: train on DS1, test on DS2 (22 unseen patients, 49,686 beats: N 44,241 · S 1,837 · V 3,220 · F 388), seed 0. Every condition is in [`results/metrics.json`](results/metrics.json).
 
-Version 1, full MIT-BIH run, inter-patient (train DS1, test DS2 = 22 unseen patients), seed 0.
+**Clean test data.** Adding RR timing to the waveform raised macro-F1 from 0.39 to 0.53 (clean-trained) and from 0.44 to 0.59 (noise-augmented). The augmented model reaches F1 0.97 on Normal, 0.87 on Ventricular and 0.50 on Supraventricular beats. Fusion (F) beats stay near zero, a known difficulty with only 388 test beats, and they pull macro-F1 down.
 
-| Test condition | Model | Accuracy | Macro-F1 | ECE | Mean confidence |
-|---|---|---|---|---|---|
-| Clean | clean-trained | 0.68 | 0.39 | 0.10 | 0.78 |
-| Clean | noise-augmented | 0.90 | 0.44 | 0.05 | 0.87 |
-| Electrode motion, 0 dB | clean-trained | 0.42 | 0.26 | 0.29 | 0.70 |
-| Electrode motion, 0 dB | noise-augmented | 0.78 | 0.37 | 0.04 | 0.75 |
-| Muscle artefact, −6 dB | clean-trained | 0.87 | 0.25 | 0.07 | 0.92 |
-| Muscle artefact, −6 dB | noise-augmented | 0.59 | 0.27 | 0.07 | 0.53 |
+| Test condition | Model | Accuracy | Macro-F1 | V-beat F1 | S-beat F1 | ECE |
+|---|---|---|---|---|---|---|
+| Clean | clean-trained | 0.84 | 0.53 | 0.74 | 0.46 | 0.03 |
+| Clean | noise-augmented | 0.94 | 0.59 | 0.87 | 0.50 | 0.06 |
+| Muscle artefact, 0 dB | clean-trained | 0.89 | 0.39 | 0.34 | 0.24 | 0.04 |
+| Muscle artefact, 0 dB | noise-augmented | 0.93 | 0.51 | 0.80 | 0.22 | 0.05 |
+| Muscle artefact, −6 dB | clean-trained | 0.88 | 0.36 | 0.24 | 0.22 | 0.05 |
+| Muscle artefact, −6 dB | noise-augmented | 0.91 | 0.43 | 0.65 | 0.07 | 0.07 |
+| Electrode motion, −6 dB | clean-trained | 0.82 | 0.40 | 0.43 | 0.22 | 0.02 |
+| Electrode motion, −6 dB | noise-augmented | 0.72 | 0.30 | 0.33 | 0.02 | 0.04 |
 
-**Figure 1 — Macro-F1 and calibration error versus SNR, per noise type.**
+**Figure 1 — Accuracy against per-class F1 under muscle artefact.** The headline result: the averages stay flat while rare-beat detection falls away.
 
-![Robustness](results_v1_morphology_only/fig1_robustness.png)
+![Per-class](results/fig4_per_class.png)
 
-**Figure 2 — Reliability diagrams for the clean-trained model.** Under muscle artefact at 0 dB the curve sits close to the diagonal, so the model *looks* well calibrated, yet macro-F1 has fallen to 0.27: it is confidently right on Normal beats and misses rare ones. Temperature scaling (fitted on other patients) pulls both curves further from the diagonal.
+**Figure 2 — Macro-F1 and calibration error versus SNR, per noise type.**
 
-![Reliability](results_v1_morphology_only/fig2_reliability.png)
+![Robustness](results/fig1_robustness.png)
 
-**Figure 3 — Selective prediction: performance when the model may abstain on uncertain beats.**
+**Figure 3 — Reliability diagrams for the clean-trained model, clean versus muscle artefact at 0 dB.**
 
-![Selective prediction](results_v1_morphology_only/fig3_selective.png)
+![Reliability](results/fig2_reliability.png)
+
+**Figure 4 — Selective prediction at electrode motion 6 dB: performance when the model may abstain on uncertain beats.**
+
+![Selective prediction](results/fig3_selective.png)
 
 ### Key findings
 
-1. **Electrode motion is the most dangerous noise, and the model stays confident while failing.** For the clean-trained model, accuracy falls from 0.68 to 0.24 between clean and −6 dB, but mean confidence only drops from 0.78 to 0.67. Calibration error rises more than fourfold (ECE 0.10 → 0.44).
-2. **Accuracy hides failure under muscle artefact.** At −6 dB, accuracy *rises* to 0.87 and confidence to 0.92, yet macro-F1 falls from 0.39 to 0.25. The model collapses onto the majority Normal class, which is 89% of test beats. Accuracy and ECE both look healthy; only per-class metrics reveal the failure.
-3. **Noise augmentation helps across the board up to 0 dB.** At electrode motion 0 dB it lifts macro-F1 from 0.26 to 0.37 and cuts ECE from 0.29 to 0.04. It also improves clean-data performance (macro-F1 0.39 → 0.44). At −6 dB baseline wander and muscle artefact it no longer helps.
-4. **Post-hoc calibration does not transfer across patients.** Temperature scaling fitted on held-out *training* patients made the clean-trained model worse on new patients (clean-data ECE 0.10 → 0.21). Calibration methods validated within one patient group can mislead on another.
-5. **Abstention works only for the robust model.** At electrode motion 6 dB, the area under the risk–coverage curve is 0.35 for the clean-trained model versus 0.06 for the augmented model. A model that is confidently wrong cannot safely defer.
+1. **Muscle noise causes a failure that standard metrics miss.** For the clean-trained model, from clean data to −6 dB, accuracy *rises* from 0.84 to 0.88 and confidence from 0.86 to 0.93. Calibration error stays at or below 0.05 throughout. Meanwhile ventricular-beat F1 falls from 0.74 to 0.24, a two-thirds drop on the clinically most important class. Accuracy, confidence and ECE all report a healthy model.
+2. **Noise augmentation protects one class and sacrifices another.** At muscle artefact −6 dB it keeps ventricular F1 at 0.65 instead of 0.24, but supraventricular F1 falls to 0.07 instead of 0.22. Under baseline wander −6 dB it falls to 0.01. No single model is robust across classes, so per-class reporting is necessary.
+3. **Timing features mask waveform damage.** Under electrode motion at −6 dB, adding RR timing raised macro-F1 from 0.15 to 0.40 and cut calibration error from 0.44 to 0.02. Because RR intervals here come from reference annotations, this is an upper bound: on a real device the same noise would also disrupt R-peak detection.
+4. **Post-hoc calibration does not transfer reliably across patients.** Temperature scaling fitted on held-out training patients made the clean-trained model worse on new patients (ECE 0.03 → 0.09) and the augmented model better (0.06 → 0.02). The same pattern appeared in the waveform-only version.
 
-**Caveat.** Absolute macro-F1 is modest because the model sees beat shape only. Published inter-patient systems add RR-interval timing features, which matter most for supraventricular (S) beats. Adding them is the planned next step; the robustness and calibration comparisons above are relative and do not depend on it.
+### Ablation: waveform only (version 1)
+
+Results without RR features are kept in [`results_v1_morphology_only/`](results_v1_morphology_only/); reproduce with `python run.py --no-rr`. Clean-data macro-F1 was 0.39 (clean-trained) and 0.44 (augmented). The hidden-failure pattern of finding 1 was already present there: under muscle artefact at −6 dB, accuracy rose to 0.87 while macro-F1 fell from 0.39 to 0.25.
 
 ## Run it
 
@@ -109,7 +116,10 @@ colab.ipynb      one-click Colab runner
 
 ## Limitations and next steps
 
+- RR intervals come from reference R-peak annotations. Running a real R-peak detector on the noisy signal is the most important next step.
+- Fusion (F) beats are almost never recognised; class-balanced sampling or focal loss may help.
 - Single lead (MLII) and a single small CNN; larger models and both leads are natural extensions.
+- One seed; repeated runs with confidence intervals are needed before strong claims.
 - Max-softmax confidence is a simple baseline; Monte Carlo dropout, deep ensembles and conformal prediction are planned comparisons.
 - Noise is added at fixed SNR per condition; real recordings mix noise types and vary over time.
 - The same audit framework applies to other safety-critical signals, such as RF spectrograms under jamming.

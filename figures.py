@@ -98,7 +98,45 @@ def selective(store, y, out, cond=("em", 6)):
     plt.close(fig)
 
 
+CLS_COL = {"N": "#1baf7a", "S": "#eda100", "V": "#e87ba4"}   # categorical slots 3-5 (1-2 = models)
+CLS_MK = {"N": "^", "S": "D", "V": "v"}
+CLS_LBL = {"N": "Normal", "S": "Supraventricular", "V": "Ventricular"}
+
+
+def per_class(rows, out, noise="ma"):
+    """Accuracy versus per-class F1 under one noise type: where an average hides a failure."""
+    if "f1_N" not in rows[0]:
+        return   # metrics from before per-class F1 was recorded
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.3), sharey=True)
+    for ax, m in zip(axes, ("clean", "noisy")):
+        labels = []
+        x, acc = _series(rows, m, noise, "accuracy")
+        ax.plot(x, acc, color=INK, ls=(0, (4, 2)), lw=1.6, marker="o", markersize=5)
+        labels.append([acc[-1], "accuracy"])
+        for c in "NSV":
+            x, f = _series(rows, m, noise, f"f1_{c}")
+            ax.plot(x, f, color=CLS_COL[c], marker=CLS_MK[c], markersize=7)
+            labels.append([f[-1], f"{CLS_LBL[c]} F1"])
+        labels.sort()
+        for i in range(1, len(labels)):          # keep end labels at least 0.06 apart
+            labels[i][0] = max(labels[i][0], labels[i - 1][0] + 0.06)
+        for yv, text in labels:
+            ax.text(x[-1] - 1.2, yv, text, va="center", color=INK, fontsize=9)
+        _snr_axis(ax)
+        ax.set_xlim(CLEAN_X + 2, -18)   # room for direct labels on the right
+        ax.set_xticks([CLEAN_X, 24, 18, 12, 6, 0, -6], ["clean", "24", "18", "12", "6", "0", "−6"])
+        ax.set_title(LBL[m].capitalize(), color=INK, fontsize=11)
+        ax.set_ylim(0, 1.02)
+    axes[0].set_ylabel("Score on unseen patients")
+    fig.suptitle(f"Under {NOISE_TYPES[noise]}, accuracy stays high while ventricular-beat detection collapses",
+                 color=INK, fontsize=12)
+    fig.tight_layout()
+    fig.savefig(os.path.join(out, "fig4_per_class.png"))
+    plt.close(fig)
+
+
 def make_figures(rows, store, y, temps, out):
+    per_class(rows, out)
     robustness(rows, out)
     reliability(store, y, temps, out)
     selective(store, y, out)
