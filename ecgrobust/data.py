@@ -45,11 +45,16 @@ class BeatSet:
 def download(root: str) -> None:
     """Fetch both databases from PhysioNet (~110 MB) unless already present."""
     import wfdb
-    for db in ["mitdb", "nstdb"]:
+    # Only the records this study uses: 44 MIT-BIH records + 3 noise records.
+    needed = {"mitdb": [str(r) for r in DS1 + DS2], "nstdb": list(NOISE_TYPES)}
+    for db, recs in needed.items():
         path = os.path.join(root, db)
-        if not os.path.exists(os.path.join(path, "100.hea" if db == "mitdb" else "bw.hea")):
-            print(f"Downloading {db} to {path} ...")
-            wfdb.dl_database(db, path)
+        missing = [r for r in recs if not os.path.exists(os.path.join(path, r + ".dat"))]
+        if missing:
+            print(f"Downloading {len(missing)} {db} records to {path} ...", flush=True)
+            wfdb.dl_database(db, path, records=missing,
+                             annotators="atr" if db == "mitdb" else None)
+    print("Download complete.", flush=True)
 
 
 def load_beats(root: str, records: list[int]) -> BeatSet:
